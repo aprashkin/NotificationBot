@@ -6,7 +6,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils import executor
 
 # Ваш токен бота
-BOT_TOKEN = ''
+BOT_TOKEN = '7213835668:AAE3zQGnqNfMRq7W1EuHAiBLm5d5SFC_7rQ'
 
 bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
@@ -14,6 +14,9 @@ dp = Dispatcher(bot, storage=storage)
 
 # Список групп (Пример)
 groups = {"ИП1-21": [], "102": [], "103": []}
+
+teacher_sessions = {}
+
 
 # Кодовые фразы для учителей
 teacher_codes = {
@@ -100,33 +103,36 @@ async def teacher_authorization(message: types.Message, state: FSMContext):
             break
 
     if teacher_name:
-        await state.update_data(teacher_name=teacher_name)
+        teacher_sessions[message.chat.id] = {'name': teacher_name, 'group': None}
         await message.answer(f"Авторизация успешна, {teacher_name}! Выберите группу для отправки сообщения:", reply_markup=group_keyboard)
         await UserStates.teacher_choose_group.set()
     else:
         await message.answer("Неверная кодовая фраза. Попробуйте снова.")
 
 
+
 # Обработчик выбора группы учителем
 @dp.message_handler(lambda message: message.text in groups.keys(), state=UserStates.teacher_choose_group)
 async def teacher_choose_group(message: types.Message, state: FSMContext):
-    await state.update_data(selected_group=message.text)
+    teacher_sessions[message.chat.id]['group'] = message.text
     await message.answer(f"Вы выбрали группу {message.text}. Введите сообщение для рассылки:")
     await UserStates.teacher_message.set()
 
 
+
 # Обработчик отправки сообщения учителем
 @dp.message_handler(state=UserStates.teacher_message)
+@dp.message_handler(state=UserStates.teacher_message)
 async def teacher_message(message: types.Message, state: FSMContext):
-    user_data = await state.get_data()
-    selected_group = user_data.get('selected_group')
-    teacher_name = user_data.get('teacher_name')
-    message_text = message.text
-
-    if not teacher_name or not selected_group:
+    teacher_session = teacher_sessions.get(message.chat.id)
+    if not teacher_session or not teacher_session.get('group'):
         await message.answer("Произошла ошибка. Пожалуйста, начните заново.")
         await state.finish()
         return
+
+    selected_group = teacher_session['group']
+    teacher_name = teacher_session['name']
+    message_text = message.text
 
     for student_id in groups[selected_group]:
         try:
@@ -141,8 +147,10 @@ async def teacher_message(message: types.Message, state: FSMContext):
 # Обработчик для повторной отправки сообщения учителем
 @dp.message_handler(lambda message: message.text == "Отправить сообщение заново")
 async def resend_message(message: types.Message, state: FSMContext):
+    teacher_sessions[message.chat.id]['group'] = None
     await message.answer("Выберите группу для отправки сообщения:", reply_markup=group_keyboard)
     await UserStates.teacher_choose_group.set()
+
 
 
 if __name__ == '__main__':
